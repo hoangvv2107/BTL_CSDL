@@ -37,14 +37,76 @@ class DongVatPanel extends JPanel {
         if ("null".equals(String.valueOf(model.getValueAt(r, 7)))) maPhieuXuat.setSelectedIndex(0);
     }
     private void save(boolean update) {
+        String maValue = ma.getText().trim();
+        String chuongValue = String.valueOf(maChuong.getSelectedItem());
+        String loValue = String.valueOf(maLo.getSelectedItem());
+        String phieuValue = maPhieuXuat.getSelectedIndex() == 0 ? null : String.valueOf(maPhieuXuat.getSelectedItem());
+        String sucKhoeValue = sucKhoe.getText().trim();
+        if (maValue.isEmpty() || canNang.getText().trim().isEmpty()
+                || "null".equals(chuongValue) || "null".equals(loValue)) {
+            Ui.error(this, new Exception("Vui lòng nhập đầy đủ mã, cân nặng, mã chuồng và mã lô."));
+            return;
+        }
+        if (!maValue.matches("[A-Za-z]{2}\\d{3}")) {
+            Ui.error(this, new Exception("Mã động vật phải có dạng 2 chữ cái và 3 chữ số, ví dụ: DV014."));
+            return;
+        }
+        if (sucKhoeValue.length() > 100) {
+            Ui.error(this, new Exception("Tình trạng sức khỏe không được dài quá 100 ký tự."));
+            return;
+        }
+        BigDecimal canNangValue;
+        try {
+            canNangValue = new BigDecimal(canNang.getText().trim());
+        } catch (NumberFormatException e) {
+            Ui.error(this, new Exception("Cân nặng phải là một số hợp lệ."));
+            return;
+        }
+        if (canNangValue.signum() <= 0) {
+            Ui.error(this, new Exception("Cân nặng hiện tại phải lớn hơn 0."));
+            return;
+        }
         String sql = update ? "UPDATE DongVat SET GioiTinh=?,CanNangHienTai=?,TinhTrangSucKhoe=?,GhiChu=?,MaChuong=?,MaLo=?,MaPhieuXuat=? WHERE MaDongVat=?"
                 : "INSERT INTO DongVat(MaDongVat,GioiTinh,CanNangHienTai,TinhTrangSucKhoe,GhiChu,MaChuong,MaLo,MaPhieuXuat) VALUES(?,?,?,?,?,?,?,?)";
         try (Connection c = Database.open(); PreparedStatement p = c.prepareStatement(sql)) {
-            p.setString(1, String.valueOf(gioiTinh.getSelectedItem())); p.setBigDecimal(2, new BigDecimal(canNang.getText().trim()));
-            p.setString(3, sucKhoe.getText().trim()); p.setString(4, ghiChu.getText().trim()); p.setString(5, String.valueOf(maChuong.getSelectedItem()));
-            p.setString(6, String.valueOf(maLo.getSelectedItem()));
-            if (maPhieuXuat.getSelectedIndex() == 0) p.setNull(7, Types.CHAR); else p.setString(7, String.valueOf(maPhieuXuat.getSelectedItem()));
-            p.setString(8, ma.getText().trim()); p.executeUpdate(); Ui.info(this, "Đã lưu dữ liệu động vật."); load();
+            String duplicateSql = update
+                    ? "SELECT COUNT(*) FROM DongVat WHERE MaDongVat=? AND MaDongVat<>?"
+                    : "SELECT COUNT(*) FROM DongVat WHERE MaDongVat=?";
+            try (PreparedStatement duplicate = c.prepareStatement(duplicateSql)) {
+                duplicate.setString(1, maValue);
+                if (update) duplicate.setString(2, maValue);
+                try (ResultSet result = duplicate.executeQuery()) {
+                    result.next();
+                    if (result.getInt(1) > 0) {
+                        Ui.error(this, new Exception("Mã động vật đã tồn tại, vui lòng nhập mã khác."));
+                        return;
+                    }
+                }
+            }
+            if (!update || phieuValue == null) {
+                String capacitySql = "SELECT c.SucChua, COUNT(d.MaDongVat) FROM Chuong c " +
+                        "LEFT JOIN DongVat d ON d.MaChuong=c.MaChuong AND d.MaPhieuXuat IS NULL " +
+                        (update ? "AND d.MaDongVat<>? " : "") +
+                        "WHERE c.MaChuong=? GROUP BY c.SucChua";
+                try (PreparedStatement capacity = c.prepareStatement(capacitySql)) {
+                    if (update) {
+                        capacity.setString(1, maValue);
+                        capacity.setString(2, chuongValue);
+                    } else {
+                        capacity.setString(1, chuongValue);
+                    }
+                    try (ResultSet result = capacity.executeQuery()) {
+                        if (result.next() && result.getInt(2) >= result.getInt(1)) {
+                            Ui.error(this, new Exception("Chuồng đã đủ sức chứa, không thể thêm động vật đang nuôi."));
+                            return;
+                        }
+                    }
+                }
+            }
+            p.setString(1, String.valueOf(gioiTinh.getSelectedItem())); p.setBigDecimal(2, canNangValue);
+            p.setString(3, sucKhoeValue); p.setString(4, ghiChu.getText().trim()); p.setString(5, chuongValue);
+            p.setString(6, loValue); if (phieuValue == null) p.setNull(7, Types.CHAR); else p.setString(7, phieuValue);
+            p.setString(8, maValue); p.executeUpdate(); Ui.info(this, "Đã lưu dữ liệu động vật."); load();
         } catch (Exception e) { Ui.error(this, e); }
     }
     private void remove() {

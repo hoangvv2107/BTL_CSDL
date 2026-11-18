@@ -36,24 +36,62 @@ class LoNhapPanel extends JPanel {
     }
 
     private void save(boolean update) {
+        String ma = maLo.getText().trim();
+        String tenLoai = loai.getText().trim();
+        String phieu = String.valueOf(maPhieu.getSelectedItem());
+        if (ma.isEmpty() || tenLoai.isEmpty() || soLuong.getText().trim().isEmpty()
+                || tongCan.getText().trim().isEmpty() || donGia.getText().trim().isEmpty()
+                || "null".equals(phieu)) {
+            Ui.error(this, new Exception("Vui lòng nhập đầy đủ các trường bắt buộc."));
+            return;
+        }
+        if (!ma.matches("[A-Za-z]{2}\\d{3}")) {
+            Ui.error(this, new Exception("Mã lô phải có dạng 2 chữ cái và 3 chữ số, ví dụ: LO009."));
+            return;
+        }
+        if (tenLoai.length() > 50) {
+            Ui.error(this, new Exception("Loài động vật không được dài quá 50 ký tự."));
+            return;
+        }
+        int soLuongValue;
+        BigDecimal tongCanValue, donGiaValue;
+        try {
+            soLuongValue = Integer.parseInt(soLuong.getText().trim());
+            tongCanValue = new BigDecimal(tongCan.getText().trim());
+            donGiaValue = new BigDecimal(donGia.getText().trim());
+        } catch (NumberFormatException e) {
+            Ui.error(this, new Exception("Số lượng, tổng cân nặng và đơn giá phải là số hợp lệ."));
+            return;
+        }
+        if (soLuongValue <= 0 || tongCanValue.signum() <= 0 || donGiaValue.signum() < 0) {
+            Ui.error(this, new Exception("Số lượng và tổng cân nặng phải lớn hơn 0; đơn giá không được âm."));
+            return;
+        }
         String sql = update ? "UPDATE LoNhap SET LoaiDongVat=?,SoLuongNhap=?,TongCanNangLucNhap=?,DonGiaNhap=?,MaPhieuNhap=? WHERE MaLo=?"
                 : "INSERT INTO LoNhap(MaLo,LoaiDongVat,SoLuongNhap,TongCanNangLucNhap,DonGiaNhap,MaPhieuNhap) VALUES(?,?,?,?,?,?)";
         try (Connection c = Database.open(); PreparedStatement p = c.prepareStatement(sql)) {
+            String duplicateSql = update
+                    ? "SELECT COUNT(*) FROM LoNhap WHERE MaLo=? AND MaLo<>?"
+                    : "SELECT COUNT(*) FROM LoNhap WHERE MaLo=?";
+            try (PreparedStatement duplicate = c.prepareStatement(duplicateSql)) {
+                duplicate.setString(1, ma);
+                if (update) duplicate.setString(2, ma);
+                try (ResultSet result = duplicate.executeQuery()) {
+                    result.next();
+                    if (result.getInt(1) > 0) {
+                        Ui.error(this, new Exception("Mã lô đã tồn tại, vui lòng nhập mã khác."));
+                        return;
+                    }
+                }
+            }
             if (update) {
-                p.setString(1, loai.getText().trim());
-                p.setInt(2, Integer.parseInt(soLuong.getText().trim()));
-                p.setBigDecimal(3, new BigDecimal(tongCan.getText().trim()));
-                p.setBigDecimal(4, new BigDecimal(donGia.getText().trim()));
-                p.setString(5, String.valueOf(maPhieu.getSelectedItem()));
-                p.setString(6, maLo.getText().trim());
+                p.setString(1, tenLoai); p.setInt(2, soLuongValue);
+                p.setBigDecimal(3, tongCanValue); p.setBigDecimal(4, donGiaValue);
+                p.setString(5, phieu); p.setString(6, ma);
             } else {
                 // Lệnh INSERT có MaLo ở vị trí đầu tiên, khác với lệnh UPDATE.
-                p.setString(1, maLo.getText().trim());
-                p.setString(2, loai.getText().trim());
-                p.setInt(3, Integer.parseInt(soLuong.getText().trim()));
-                p.setBigDecimal(4, new BigDecimal(tongCan.getText().trim()));
-                p.setBigDecimal(5, new BigDecimal(donGia.getText().trim()));
-                p.setString(6, String.valueOf(maPhieu.getSelectedItem()));
+                p.setString(1, ma); p.setString(2, tenLoai); p.setInt(3, soLuongValue);
+                p.setBigDecimal(4, tongCanValue); p.setBigDecimal(5, donGiaValue); p.setString(6, phieu);
             }
             p.executeUpdate();
             Ui.info(this, update ? "Đã cập nhật lô nhập." : "Đã thêm lô nhập."); load();

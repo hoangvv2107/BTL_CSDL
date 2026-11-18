@@ -16,7 +16,9 @@ class ReportChuongPanel extends JPanel {
         add(top, BorderLayout.NORTH); add(new JScrollPane(new JTable(model)), BorderLayout.CENTER);
         JTable table = (JTable) ((JScrollPane) getComponent(1)).getViewport().getView();
         reload.addActionListener(e -> load());
-        export.addActionListener(e -> Ui.exportExcel(this, table, "BaoCaoThongKeTheoChuong"));
+        export.addActionListener(e -> Ui.exportExcel(this, table, "BaoCaoThongKeTheoChuong",
+                "BÁO CÁO THỐNG KÊ TÌNH HÌNH VẬT NUÔI THEO CHUỒNG",
+                "Thống kê các chuồng đang quản lý"));
         load();
     }
 
